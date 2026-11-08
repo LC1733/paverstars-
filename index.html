@@ -186,6 +186,7 @@ details summary{cursor:pointer;color:var(--acc);font-weight:700;padding:12px 0 6
     <div class="mapa-est" id="mEstado"></div>
     <canvas id="mapa"></canvas>
     <div class="toque" id="toque">Toca un punto del mapa para saber qué es.</div>
+    <button class="btn" id="btnSigue" type="button" style="width:100%;margin:2px 0 6px;padding:12px;font-weight:800">🧭 Girar el mapa con la brújula</button>
     <input type="range" id="slider" min="-6" max="24" step="0.25" value="0" aria-label="Mover la hora">
     <div class="chips-hora">
       <button class="btn prim" type="button" data-h="ahora">Ahora</button>
@@ -200,7 +201,7 @@ details summary{cursor:pointer;color:var(--acc);font-weight:700;padding:12px 0 6
       <span><i style="background:#fb923c"></i>Sol</span>
       <span><i style="background:none;border:1px dashed #fbbf24"></i>Camino de los planetas</span>
     </div>
-    <p class="ayuda">El centro del círculo es el punto justo sobre tu cabeza y el borde es el horizonte. Sostén el teléfono en alto, con la <b>N</b> apuntando al norte: el Este queda a la izquierda, tal como lo ves al mirar hacia arriba.</p>
+    <p class="ayuda" id="ayudaMapa">El centro del círculo es el punto justo sobre tu cabeza y el borde es el horizonte. Sostén el teléfono en alto, con la <b>N</b> apuntando al norte: el Este queda a la izquierda, tal como lo ves al mirar hacia arriba.</p>
   </section>
 
   <section class="card">
@@ -755,6 +756,7 @@ function escena(f){
 }
 
 let hits = [];
+const MAPA = {sigue:false, ultimo:0};
 function dibujarMapa(S){
   const cv = $('mapa'), dpr = Math.min(window.devicePixelRatio || 1, 3);
   const W = cv.clientWidth || 340;
@@ -763,7 +765,11 @@ function dibujarMapa(S){
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, W, W);
   const cx = W/2, cy = W/2, R = W/2 - 26;
-  const P = (alt, az) => { const r = R*(90 - alt)/90; return {x: cx - r*Math.sin(az*RAD), y: cy - r*Math.cos(az*RAD)}; };
+  // Modo fijo: Norte arriba, Este a la izquierda (teléfono sobre la cabeza).
+  // Modo "gira con la brújula": lo que tienes al frente queda arriba y el Este a tu derecha real.
+  const sigue = MAPA.sigue && brujulaVigente();
+  const h0 = sigue ? headingVista() : 0, esp = sigue ? 1 : -1;
+  const P = (alt, az) => { const r = R*(90 - alt)/90; return {x: cx + esp*r*Math.sin((az - h0)*RAD), y: cy - r*Math.cos((az - h0)*RAD)}; };
   const sA = S.sol.alt;
   hits = [];
 
@@ -786,7 +792,7 @@ function dibujarMapa(S){
   c.beginPath(); c.arc(cx, cy, R, 0, 2*Math.PI); c.strokeStyle = 'rgba(94,234,212,.65)'; c.lineWidth = 1.5; c.stroke();
   c.textBaseline = 'middle';
   [['N',0],['NE',45],['E',90],['SE',135],['S',180],['SO',225],['O',270],['NO',315]].forEach(([t, az]) => {
-    const r = R + 14, x = cx - r*Math.sin(az*RAD), y = cy - r*Math.cos(az*RAD);
+    const r = R + 14, x = cx + esp*r*Math.sin((az - h0)*RAD), y = cy - r*Math.cos((az - h0)*RAD);
     const mayor = t.length === 1;
     c.font = mayor ? '800 14px system-ui,sans-serif' : '600 11px system-ui,sans-serif';
     c.fillStyle = t === 'N' ? '#5eead4' : mayor ? 'rgba(238,242,255,.85)' : 'rgba(238,242,255,.45)';
@@ -805,13 +811,13 @@ function dibujarMapa(S){
 
   // Hacia dónde miras (si la brújula está activa)
   if (brujulaVigente()){
-    const az = headingVista(), t = a => (-90 - a)*RAD;
+    const az = headingVista();
     c.beginPath(); c.moveTo(cx, cy);
-    c.arc(cx, cy, R, t(az + 30), t(az - 30), false);
+    for (let a = az - 30; a <= az + 30; a += 3){ const q = P(0, a); c.lineTo(q.x, q.y); }
     c.closePath(); c.fillStyle = 'rgba(94,234,212,.16)'; c.fill();
-    const px = cx - R*0.62*Math.sin(az*RAD), py = cy - R*0.62*Math.cos(az*RAD);
+    const q = P(90*0.38, az);
     c.font = '800 12px system-ui,sans-serif'; c.fillStyle = '#5eead4'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText('Tú miras aquí', px, py);
+    c.fillText(sigue ? '▲ Al frente' : 'Tú miras aquí', q.x, q.y);
   }
 
   const alfaDia = sA > 0 ? 0.35 : sA > -6 ? 0.6 : 1;
@@ -1544,6 +1550,34 @@ setInterval(() => {
     $('hBrujula').textContent = '';
   }
 }, 400);
+
+// Mapa principal que gira en vivo con la brújula
+const AYUDA_FIJA = $('ayudaMapa').innerHTML;
+const AYUDA_SIGUE = 'Sostén el teléfono frente a ti, casi horizontal, como para leer: <b>lo que está arriba en el mapa es lo que tienes al frente</b>, y lo que está a la derecha del mapa está a tu derecha. Al girar tú, el mapa gira contigo. El centro es el punto sobre tu cabeza.';
+function loopMapa(t){
+  if (!MAPA.sigue) return;
+  if (!AR.abierto && escenaActual && t - MAPA.ultimo > 60){ MAPA.ultimo = t; dibujarMapa(escenaActual); }
+  requestAnimationFrame(loopMapa);
+}
+$('btnSigue').addEventListener('click', async () => {
+  const b = $('btnSigue');
+  if (MAPA.sigue){
+    MAPA.sigue = false; b.className = 'btn'; b.textContent = '🧭 Girar el mapa con la brújula';
+    $('ayudaMapa').innerHTML = AYUDA_FIJA; renderMapa(); return;
+  }
+  const res = await activarSensores();
+  if (res !== 'ok'){ $('toque').innerHTML = '<b>Sin permiso de movimiento.</b> Vuelve a tocar el botón y elige <b>Permitir</b>.'; return; }
+  MAPA.sigue = true; b.className = 'btn prim'; b.textContent = '🧭 Girando con la brújula · tocar para fijar';
+  $('ayudaMapa').innerHTML = AYUDA_SIGUE;
+  requestAnimationFrame(loopMapa);
+  setTimeout(() => {
+    if (MAPA.sigue && !brujulaVigente()){
+      $('toque').innerHTML = BR.esperaCal
+        ? 'Calibrando: deja el teléfono casi horizontal un segundo.'
+        : '<b>La brújula no responde.</b> Abre la página en Safari y acepta el permiso de movimiento.';
+    }
+  }, 2500);
+});
 
 llenarSelect();
 llenarObjetivos();
