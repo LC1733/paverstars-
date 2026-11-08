@@ -1503,8 +1503,14 @@ $('arCam').addEventListener('click', async () => {
     await v.play().catch(() => {});
     AR.camara = true; AR.vfov = 64; $('arCam').textContent = '📷 Apagar';
   } catch(e){
-    mostrarMsg('<b>No se pudo abrir la cámara.</b> Requiere permiso y que la página se abra desde un enlace https.');
-    setTimeout(() => mostrarMsg(''), 4000);
+    const n = (e && e.name) || '';
+    let txt = 'Requiere permiso de cámara para este navegador.';
+    if (n === 'NotAllowedError') txt = 'El permiso de cámara está bloqueado. En el iPhone: <b>Ajustes → Apps → (Safari o Chrome) → Cámara → Permitir</b>. En Safari también: botón <b>aA</b> junto a la dirección → Configuración del sitio web → Cámara → Permitir. Luego recarga la página.';
+    else if (n === 'NotFoundError' || n === 'OverconstrainedError') txt = 'No se encontró una cámara trasera disponible.';
+    else if (n === 'NotReadableError') txt = 'La cámara está en uso por otra app. Ciérrala y vuelve a intentar.';
+    else if (!navigator.mediaDevices) txt = 'Este navegador no permite usar la cámara desde páginas web. Ábrela en Safari.';
+    mostrarMsg(`<b>No se pudo abrir la cámara.</b> ${txt} <small>(${n || 'sin código'})</small>`);
+    setTimeout(() => mostrarMsg(''), 9000);
   }
 });
 
