@@ -1034,8 +1034,18 @@ function rotMatriz(a, b, g){
 
 function onOrient(e, esAbsoluto){
   let alpha;
-  if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0){
-    alpha = 360 - e.webkitCompassHeading; BR.absoluto = true; BR.fuente = 'ios';         // iPhone
+  if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0 && e.alpha != null){
+    // iPhone: el rumbo de iOS se refiere a la parte superior del teléfono y se invierte 180° al inclinarlo
+    // sobre la vertical (apuntando al cielo). Por eso solo se usa para calibrar mientras el teléfono
+    // está poco inclinado (|beta| < 65°), y luego se sigue con el giroscopio (alpha relativo + desfase).
+    if (Math.abs(e.beta) < 65){
+      const off = norm360((360 - e.webkitCompassHeading) - e.alpha);
+      BR.off = (BR.off == null) ? off : norm360(BR.off + 0.15*(((off - BR.off + 540) % 360) - 180));
+    }
+    BR.fuente = 'ios';
+    if (BR.off == null){ BR.esperaCal = true; return; }
+    BR.esperaCal = false;
+    alpha = e.alpha + BR.off; BR.absoluto = true;
   } else if ((esAbsoluto || e.absolute) && e.alpha != null){
     alpha = e.alpha; BR.absoluto = true; BR.fuente = 'abs';                               // Android
   } else {
@@ -1064,7 +1074,7 @@ function onOrient(e, esAbsoluto){
 
 // Rumbo útil: con el teléfono levantado, hacia donde apunta la cámara; con el teléfono plano, hacia donde apunta su parte superior
 function headingVista(){
-  const v = Math.abs(BR.f[2]) < 0.8 ? BR.f : BR.u;
+  const v = BR.f[2] > -0.8 ? BR.f : BR.u;
   return norm360(Math.atan2(v[0], v[1])*DEG);
 }
 
@@ -1115,7 +1125,9 @@ function abrirAR(res){
     mostrarMsg('<b>Sin permiso para la brújula.</b> Cierra esta vista, vuelve a tocar “Apuntar al cielo” y acepta el permiso de movimiento. Mientras tanto, puedes recorrer el cielo arrastrando con el dedo.');
   }
   setTimeout(() => {
-    if (AR.abierto && !brujulaVigente() && $('arMsg').style.display === 'none'){
+    if (AR.abierto && BR.esperaCal && !brujulaVigente()){
+      mostrarMsg('<b>Calibrando la brújula:</b> baja el teléfono hasta que quede casi horizontal (como para leer) durante un segundo, y luego vuelve a apuntar al cielo.');
+    } else if (AR.abierto && !brujulaVigente() && $('arMsg').style.display === 'none'){
       mostrarMsg('<b>El teléfono no está entregando la brújula.</b> En iPhone, iOS solo la entrega si la página se abre desde un enlace <b>https</b> en Safari (por ejemplo GitHub Pages); abierta como archivo desde WhatsApp o Archivos queda bloqueada. Mientras tanto, arrastra con el dedo para recorrer el cielo.');
     }
   }, 2500);
@@ -1327,7 +1339,7 @@ function dibujarAR(){
 
   // Cinta de brújula
   const az0 = norm360(Math.atan2(f[0], f[1])*DEG), alt0 = Math.asin(clamp1(f[2]))*DEG;
-  const azC = Math.abs(f[2]) < 0.8 ? az0 : norm360(Math.atan2(u[0], u[1])*DEG);
+  const azC = f[2] > -0.8 ? az0 : norm360(Math.atan2(u[0], u[1])*DEG); // con el teléfono plano, manda la parte superior
   const yC = topH + 18, pxg = (W - 40)/120;
   c.fillStyle = 'rgba(2,6,23,.55)'; c.fillRect(20, yC - 20, W - 40, 34);
   c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -1353,7 +1365,8 @@ function dibujarAR(){
     $('arRumbo').textContent = `Mirando al ${rumbo(azC)} · ${Math.round(azC)}°`;
     const partesSub = [`Altura ${Math.round(alt0)}°`, hh(new Date()), LUGAR.nombre];
     if (AR.gpsTxt) partesSub.push(AR.gpsTxt);
-    if (!sensor) partesSub.push('modo manual: arrastra');
+    if (BR.esperaCal) partesSub.push('para calibrar, baja el teléfono hasta que quede casi horizontal un segundo');
+    else if (!sensor) partesSub.push('modo manual: arrastra');
     else if (!BR.absoluto) partesSub.push('brújula sin norte real');
     $('arSub').textContent = partesSub.join(' · ');
 
