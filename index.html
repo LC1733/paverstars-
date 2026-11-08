@@ -1481,8 +1481,14 @@ function renderSirio(){
   $('sirioDet').innerHTML = det.join('<br>');
 }
 
-$('btnSirio').addEventListener('click', async () => { fijarObjetivo('Sirio'); const res = await activarSensores(); abrirAR(res); });
-$('btnAR').addEventListener('click', async () => { const res = await activarSensores(); abrirAR(res); });
+// Al abrir la vista se pide la cámara automáticamente (el iPhone muestra su aviso de permiso)
+async function abrirConTodo(){
+  const res = await activarSensores();
+  abrirAR(res);
+  if (!AR.camara && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) alternarCamara();
+}
+$('btnSirio').addEventListener('click', () => { fijarObjetivo('Sirio'); abrirConTodo(); });
+$('btnAR').addEventListener('click', () => abrirConTodo());
 $('arCerrar').addEventListener('click', cerrarAR);
 $('arZoomMas').addEventListener('click', () => { AR.vfov = Math.max(20, AR.vfov/1.25); });
 $('arZoomMenos').addEventListener('click', () => { AR.vfov = Math.min(110, AR.vfov*1.25); });
@@ -1490,7 +1496,8 @@ const ajustar = d => { BR.ajuste = Math.max(-30, Math.min(30, BR.ajuste + d)); t
 $('arAjIzq').addEventListener('click', () => ajustar(-1));
 $('arAjDer').addEventListener('click', () => ajustar(1));
 
-$('arCam').addEventListener('click', async () => {
+$('arCam').addEventListener('click', () => alternarCamara());
+async function alternarCamara(){
   const v = $('arVideo');
   if (AR.camara){
     if (AR.stream) AR.stream.getTracks().forEach(t => t.stop());
@@ -1512,7 +1519,7 @@ $('arCam').addEventListener('click', async () => {
     mostrarMsg(`<b>No se pudo abrir la cámara.</b> ${txt} <small>(${n || 'sin código'})</small>`);
     setTimeout(() => mostrarMsg(''), 9000);
   }
-});
+}
 
 // Arrastre manual (cuando no hay brújula)
 const arCv = $('arCanvas');
