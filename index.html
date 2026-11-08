@@ -117,6 +117,18 @@ details summary{cursor:pointer;color:var(--acc);font-weight:700;padding:12px 0 6
 .ar-msg{position:absolute;left:16px;right:16px;top:32%;background:rgba(12,22,40,.96);border:1px solid rgba(251,191,36,.4);
   border-radius:16px;padding:16px;font-size:15px;display:none}
 .ar-msg b{color:var(--warn)}
+
+/* Buscador */
+.ar-guia{background:rgba(12,22,40,.92);border:1px solid rgba(94,234,212,.4);border-radius:14px;padding:10px 12px;margin-bottom:8px}
+.ar-guia select{width:100%;margin-bottom:8px;padding:7px 10px;font-size:15px;font-weight:700}
+.ar-ins{font-size:21px;font-weight:800;line-height:1.25}
+.ar-ins.ok{color:var(--ok)}
+.ar-ins.bajo{color:var(--warn)}
+.ar-ins2{font-size:14px;color:var(--muted);margin-top:3px}
+.sirio-card{border-color:rgba(94,234,212,.45);background:linear-gradient(140deg,#0f2d3c 0%,#0c1628 75%)}
+.sirio-pos{font-size:22px;font-weight:800;margin:2px 0 4px}
+.sirio-card ol{padding-left:20px;margin:4px 0 8px}
+.sirio-card li{margin:6px 0}
 </style>
 </head>
 <body>
@@ -142,6 +154,23 @@ details summary{cursor:pointer;color:var(--acc);font-weight:700;padding:12px 0 6
     <span class="ico">🧭</span>
     <span><b>Apuntar al cielo</b><span class="t">Levanta el teléfono hacia el cielo: verás qué hay en esa dirección, con Norte, Sur, Este y Oeste que se mueven contigo.</span></span>
   </button>
+
+  <section class="card sirio-card">
+    <h2>✦ Sirio</h2>
+    <div class="sirio-pos" id="sirioPos">—</div>
+    <div class="o-det" id="sirioDet"></div>
+    <button class="btn prim" id="btnSirio" type="button" style="width:100%;margin-top:12px;padding:13px;font-size:16px">🎯 Buscar Sirio con el teléfono</button>
+    <details>
+      <summary>Cómo estar seguro de que es Sirio</summary>
+      <ol class="o-det">
+        <li><b>El buscador lo confirma:</b> cuando Sirio queda dentro del círculo central, aparece en verde “✅ ¡Ese es Sirio!”.</li>
+        <li><b>Es la estrella más brillante de todo el cielo nocturno.</b> Solo la Luna, Venus, Júpiter y a veces Marte brillan más, y esos no parpadean como él.</li>
+        <li><b>Parpadea mucho</b>, y cuando está bajo destella en colores (blanco, azul, rojo). Su color propio es blanco azulado.</li>
+        <li><b>Las Tres Marías apuntan a él:</b> sigue la línea de las tres estrellas del cinturón de Orión, unos dos puños con el brazo estirado, y llegas a Sirio. El buscador dibuja esa línea.</li>
+        <li><b>No lo confundas con Canopus</b>, la segunda más brillante: está más hacia el sur y es amarillenta. El buscador te dice cuál es cuál.</li>
+      </ol>
+    </details>
+  </section>
 
   <section class="card">
     <h2 id="tNoche">Esta noche</h2>
@@ -206,6 +235,11 @@ details summary{cursor:pointer;color:var(--acc);font-weight:700;padding:12px 0 6
   </div>
   <div class="ar-msg" id="arMsg"></div>
   <div class="ar-bot">
+    <div class="ar-guia">
+      <select id="arObjetivo" aria-label="Qué buscar"></select>
+      <div class="ar-ins" id="arIns">—</div>
+      <div class="ar-ins2" id="arIns2"></div>
+    </div>
     <div class="ar-mira" id="arMira"></div>
     <div class="ar-fila">
       <span><button class="btn" id="arZoomMas" type="button">＋ Zoom</button> <button class="btn" id="arZoomMenos" type="button">－</button></span>
@@ -1120,6 +1154,10 @@ function dibujarAR(){
   const c = cv.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, W, H);
+  const topH = document.querySelector('.ar-top').offsetHeight;
+  const botH = document.querySelector('.ar-bot').offsetHeight;
+  const zTop = topH + 44, zBot = Math.max(zTop + 80, H - botH - 6); // zona libre entre paneles
+  const cyA = (zTop + zBot)/2, ax = W/2 - 34, ay = (zBot - zTop)/2 - 14;
 
   // Dirección de la "cámara": sensores o arrastre manual
   let f, u, r;
@@ -1232,25 +1270,54 @@ function dibujarAR(){
     etiqueta(s.n, p.x, p.y, 7, '600 13px system-ui,sans-serif', `rgba(253,230,138,${0.95*alfa})`);
   });
 
-  // Flechas hacia Luna y planetas visibles fuera de la pantalla
-  const ax = W/2 - 34, ay = H/2 - 130;
-  brillantes.forEach(b => {
-    if (b.o.alt <= 0 || (b.o.tipo === 'planeta' && b.o.mag > 3)) return;
-    const p = proj(b.w);
-    if (p && p.x > 0 && p.x < W && p.y > 90 && p.y < H - 140) return;
-    let dx = dot(b.w, r), dy = dot(b.w, u);
+  // Flecha en el borde de la zona libre
+  const flecha = (w, txt, col, grande) => {
+    let dx = dot(w, r), dy = dot(w, u);
     if (Math.hypot(dx, dy) < 1e-3){ dx = 0; dy = -1; }
     const ang = Math.atan2(dy, dx);
-    const x = W/2 + Math.cos(ang)*ax, y = H/2 - Math.sin(ang)*ay;
+    const x = W/2 + Math.cos(ang)*ax, y = cyA - Math.sin(ang)*ay, s = grande ? 1.9 : 1;
     c.save(); c.translate(x, y); c.rotate(-ang);
-    c.beginPath(); c.moveTo(12, 0); c.lineTo(-7, -8); c.lineTo(-7, 8); c.closePath();
-    c.fillStyle = b.col; c.fill(); c.restore();
-    c.font = '700 13px system-ui,sans-serif'; c.textBaseline = 'middle';
+    c.beginPath(); c.moveTo(12*s, 0); c.lineTo(-7*s, -8*s); c.lineTo(-7*s, 8*s); c.closePath();
+    c.fillStyle = col; c.fill(); c.restore();
+    c.font = grande ? '800 16px system-ui,sans-serif' : '700 13px system-ui,sans-serif'; c.textBaseline = 'middle';
     c.textAlign = Math.cos(ang) > 0.3 ? 'right' : Math.cos(ang) < -0.3 ? 'left' : 'center';
-    const tx = x - Math.cos(ang)*18, ty = y + Math.sin(ang)*18;
-    c.lineWidth = 3; c.strokeStyle = 'rgba(2,6,23,.8)'; c.strokeText(b.txt, tx, ty);
-    c.fillStyle = b.col; c.fillText(b.txt, tx, ty);
+    const tx = x - Math.cos(ang)*(18*s + 4), ty = y + Math.sin(ang)*(18*s + 4);
+    c.lineWidth = 3; c.strokeStyle = 'rgba(2,6,23,.85)'; c.strokeText(txt, tx, ty);
+    c.fillStyle = col; c.fillText(txt, tx, ty);
+  };
+  const enZona = p => p && p.x > 10 && p.x < W - 10 && p.y > zTop && p.y < zBot;
+
+  // Flechas pequeñas hacia Luna y planetas visibles (salvo el que estás buscando)
+  brillantes.forEach(b => {
+    if (b.o.alt <= 0 || (b.o.tipo === 'planeta' && b.o.mag > 3)) return;
+    if ((b.o.nombre && b.o.nombre === AR.obj) || (b.o.tipo === 'luna' && AR.obj === 'Luna')) return;
+    if (enZona(proj(b.w))) return;
+    flecha(b.w, b.txt, b.col, false);
   });
+
+  // ===== Buscador del objetivo elegido =====
+  const T = datosObjetivo(S, AR.obj);
+  let distT = 999;
+  if (T){
+    const wT = vec(T.alt, T.az);
+    distT = Math.acos(clamp1(dot(wT, f)))*DEG;
+    // Guía de las Tres Marías hacia Sirio
+    if (AR.obj === 'Sirio'){
+      const a1 = porNombre['Mintaka'], b1 = porNombre['Sirio'], m1 = porNombre['Alnilam'];
+      const va = vec(a1.alt, a1.az), vb = vec(b1.alt, b1.az), pts = [];
+      for (let k = 0; k <= 30; k++){ const t = k/30; pts.push(norm3([va[0]*(1-t) + vb[0]*t, va[1]*(1-t) + vb[1]*t, va[2]*(1-t) + vb[2]*t])); }
+      c.lineWidth = 2; c.setLineDash([6, 6]); c.strokeStyle = 'rgba(94,234,212,.6)'; curva(pts); c.setLineDash([]);
+      const pm = proj(vec(m1.alt, m1.az));
+      if (enPantalla(pm)) etiqueta('Tres Marías', pm.x, pm.y, 12, 'italic 700 13px system-ui,sans-serif', '#99f6e4');
+    }
+    const pT = proj(wT);
+    if (enPantalla(pT)){
+      const t = performance.now()/1000, rad = 22 + 4*Math.sin(t*4);
+      c.lineWidth = 3; c.strokeStyle = distT < 3.5 ? '#4ade80' : '#5eead4';
+      c.beginPath(); c.arc(pT.x, pT.y, rad, 0, 2*Math.PI); c.stroke();
+    }
+    if (!enZona(pT)) flecha(wT, T.nombre, '#5eead4', true);
+  }
 
   // Mira central
   c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 1.5;
@@ -1261,7 +1328,7 @@ function dibujarAR(){
   // Cinta de brújula
   const az0 = norm360(Math.atan2(f[0], f[1])*DEG), alt0 = Math.asin(clamp1(f[2]))*DEG;
   const azC = Math.abs(f[2]) < 0.8 ? az0 : norm360(Math.atan2(u[0], u[1])*DEG);
-  const yC = H - 150, pxg = (W - 40)/120;
+  const yC = topH + 18, pxg = (W - 40)/120;
   c.fillStyle = 'rgba(2,6,23,.55)'; c.fillRect(20, yC - 20, W - 40, 34);
   c.textAlign = 'center'; c.textBaseline = 'middle';
   for (let d = -60; d <= 60; d++){
@@ -1290,6 +1357,34 @@ function dibujarAR(){
     else if (!BR.absoluto) partesSub.push('brújula sin norte real');
     $('arSub').textContent = partesSub.join(' · ');
 
+    // Instrucciones del buscador
+    const ins = $('arIns'), ins2 = $('arIns2');
+    if (!T){ ins.textContent = '—'; ins2.textContent = ''; }
+    else if (T.alt < -0.5){
+      const sp = salidaCache(AR.obj);
+      ins.className = 'ar-ins bajo';
+      ins.textContent = `${T.nombre} está bajo el horizonte`;
+      ins2.innerHTML = sp.sale ? `Sale a las <b>${hhDia(sp.sale, new Date())}</b> por el ${rumbo(sp.azSale)}. La flecha muestra dónde está bajo tus pies.` : 'No sale en las próximas 24 horas desde este lugar.';
+    } else if (distT < 3.5){
+      ins.className = 'ar-ins ok';
+      ins.textContent = `✅ ¡Ese es ${T.nombre}!`;
+      let extra = `Está dentro del círculo · hacia el ${rumbo(T.az)}, ${Math.round(T.alt)}° de altura.`;
+      if (AR.obj === 'Sirio') extra += ' Es el punto más brillante de esa zona y parpadea.';
+      if (sA > -6 && T.tipo !== 'luna') extra += ' Ojo: aún hay luz de día, puede no verse.';
+      ins2.textContent = extra;
+      if (!AR.okPrev && navigator.vibrate) navigator.vibrate([60, 60, 60]);
+      AR.okPrev = true;
+    } else {
+      AR.okPrev = false;
+      const dAz = ((T.az - azC + 540) % 360) - 180, dAlt = T.alt - alt0;
+      const partesG = [];
+      if (Math.abs(alt0) < 82 && Math.abs(dAz) > 3) partesG.push(`${dAz > 0 ? '➡️ Gira' : '⬅️ Gira'} ${Math.round(Math.abs(dAz))}° a la ${dAz > 0 ? 'derecha' : 'izquierda'}`);
+      if (Math.abs(dAlt) > 3) partesG.push(`${dAlt > 0 ? '⬆️ Sube' : '⬇️ Baja'} ${Math.round(Math.abs(dAlt))}°`);
+      ins.className = 'ar-ins';
+      ins.textContent = partesG.join(' · ') || 'Casi… sigue la flecha';
+      ins2.textContent = `${T.nombre}: hacia el ${rumbo(T.az)}, ${altura(T.alt)} (${Math.round(T.alt)}°)`;
+    }
+
     let mejor = null, dMin = 70;
     objetos.forEach(ob => { const d = Math.hypot(ob.p.x - W/2, ob.p.y - H/2); if (d < dMin){ dMin = d; mejor = ob; } });
     const clave = mejor ? (mejor.o.n || mejor.o.nombre || mejor.o.tipo) : '';
@@ -1302,6 +1397,78 @@ function dibujarAR(){
   }
 }
 
+/* ===================== Buscador de objetos (Sirio por defecto) ===================== */
+AR.obj = (() => { try { return localStorage.getItem('caelum_obj') || 'Sirio'; } catch(e){ return 'Sirio'; } })();
+AR.okPrev = false;
+const SP_CACHE = {};
+
+function datosObjetivo(S, clave){
+  if (clave === 'Luna') return {nombre:'Luna', alt:S.luna.alt, az:S.luna.az, tipo:'luna'};
+  const p = S.pl.find(x => x.nombre === clave);
+  if (p) return {nombre:NOMBRE_ES[clave], alt:p.alt, az:p.az, tipo:'planeta'};
+  const s = S.st.find(x => x.n === clave);
+  if (s) return {nombre:s.n, alt:s.alt, az:s.az, tipo:'estrella'};
+  return null;
+}
+function posObjetivoEn(clave, f){
+  const l = lstH(f);
+  if (clave === 'Luna'){ const m = posLuna(f), h = aHorizontal(m.ra, m.dec, l); return {alt: altTopo(h.alt, m.paralaje), az: h.az}; }
+  if (ELEM[clave]){ const p = posPlanetas(f).find(x => x.nombre === clave); return aHorizontal(p.ra, p.dec, l); }
+  const s = ESTRELLAS.find(x => x[0] === clave);
+  return aHorizontal(s[1], s[2], l);
+}
+// Próxima salida/puesta y mejor hora de la noche (próximas 24 h, cada 5 min)
+function salidaPuesta(clave, desde){
+  const arr = [];
+  for (let m = 0; m <= 1440; m += 5){
+    const f = new Date(desde.getTime() + m*60000), h = posObjetivoEn(clave, f), s = posSol(f);
+    arr.push({f, a:h.alt, az:h.az, sol: aHorizontal(s.ra, s.dec, lstH(f)).alt});
+  }
+  const sube = cruce(arr, x => x.a, -0.5, true, 0), baja = cruce(arr, x => x.a, -0.5, false, 0);
+  let mejor = null;
+  arr.forEach(x => { if (x.sol < -12 && x.a > 0 && (!mejor || x.a > mejor.a)) mejor = x; });
+  return {sale: sube ? sube.f : null, azSale: sube ? arr[sube.i].az : 0, pone: baja ? baja.f : null, mejor};
+}
+function salidaCache(clave){
+  const k = clave + '|' + LUGAR.lat + ',' + LUGAR.lon, c0 = SP_CACHE[k];
+  if (!c0 || Date.now() - c0.t > 10*60000) SP_CACHE[k] = {t: Date.now(), ...salidaPuesta(clave, new Date())};
+  return SP_CACHE[k];
+}
+function llenarObjetivos(){
+  const op = [['Sirio','✦ Sirio'], ['Luna','Luna']];
+  NOMBRES_PL.forEach(n => op.push([n, NOMBRE_ES[n]]));
+  ESTRELLAS.filter(s => s[3] < 1.6 && s[0] !== 'Sirio').map(s => s[0]).sort((a, b) => a.localeCompare(b, 'es')).forEach(n => op.push([n, n]));
+  const sel = $('arObjetivo');
+  sel.innerHTML = op.map(([v, t]) => `<option value="${v}">Buscar: ${t}</option>`).join('');
+  sel.value = AR.obj;
+}
+function fijarObjetivo(clave){
+  AR.obj = clave; AR.okPrev = false; AR.miraClave = '';
+  try { localStorage.setItem('caelum_obj', clave); } catch(e){}
+  $('arObjetivo').value = clave;
+}
+$('arObjetivo').addEventListener('change', e => fijarObjetivo(e.target.value));
+
+// Tarjeta "Sirio" de la página principal
+function renderSirio(){
+  const ahora = new Date(), h = posObjetivoEn('Sirio', ahora);
+  const s = posSol(ahora), sAlt = aHorizontal(s.ra, s.dec, lstH(ahora)).alt;
+  const sp = salidaCache('Sirio');
+  let pos, det = [];
+  if (h.alt > 0){
+    pos = `Hacia el ${rumbo(h.az)}, ${altura(h.alt)} (${Math.round(h.alt)}°)`;
+    det.push(sAlt > -6 ? 'Está sobre el horizonte, pero aún hay luz de día.' : (h.alt < 8 ? 'Visible, pero muy bajo: pueden taparlo cerros o edificios.' : '<b>Visible ahora a simple vista.</b>'));
+    if (sp.pone) det.push(`Se pone a las ${hhDia(sp.pone, ahora)}.`);
+  } else {
+    pos = 'Bajo el horizonte ahora';
+    if (sp.sale) det.push(`Sale a las <b>${hhDia(sp.sale, ahora)}</b> por el ${rumbo(sp.azSale)}.`);
+  }
+  if (sp.mejor) det.push(`Mejor momento: ${hhDia(sp.mejor.f, ahora)}, hacia el ${rumbo(sp.mejor.az)} a ${Math.round(sp.mejor.a)}° de altura.`);
+  $('sirioPos').textContent = pos;
+  $('sirioDet').innerHTML = det.join('<br>');
+}
+
+$('btnSirio').addEventListener('click', async () => { fijarObjetivo('Sirio'); const res = await activarSensores(); abrirAR(res); });
 $('btnAR').addEventListener('click', async () => { const res = await activarSensores(); abrirAR(res); });
 $('arCerrar').addEventListener('click', cerrarAR);
 $('arZoomMas').addEventListener('click', () => { AR.vfov = Math.max(20, AR.vfov/1.25); });
@@ -1353,8 +1520,11 @@ setInterval(() => {
 }, 400);
 
 llenarSelect();
+llenarObjetivos();
 refrescarTodo();
-setInterval(refrescarTodo, 60000);
+renderSirio();
+setInterval(() => { refrescarTodo(); renderSirio(); }, 60000);
+$('selLugar').addEventListener('change', () => setTimeout(renderSirio, 0));
 </script>
 </body>
 </html>
