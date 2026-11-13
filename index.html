@@ -135,7 +135,7 @@ details summary{cursor:pointer;color:var(--acc);font-weight:700;padding:12px 0 6
 <div class="wrap">
 
   <header>
-    <div class="brand">Caelum · Cielo en vivo <span style="color:var(--dim);font-weight:600;letter-spacing:0">· v8-nov 01:30</span></div>
+    <div class="brand">Caelum · Cielo en vivo <span style="color:var(--dim);font-weight:600;letter-spacing:0">· v9-nov 12</span></div>
     <div class="lugar">
       <select id="selLugar" aria-label="Lugar"></select>
       <button class="btn" id="btnGps" type="button">📍 Mi ubicación</button>
@@ -817,8 +817,12 @@ function dibujarMapa(S){
     c.closePath(); c.fillStyle = 'rgba(94,234,212,.16)'; c.fill();
     const q = P(90*0.38, az);
     c.font = '800 12px system-ui,sans-serif'; c.fillStyle = '#5eead4'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText(sigue ? '▲ Al frente' : 'Tú miras aquí', q.x, q.y);
+    if (!sigue) c.fillText('Tú miras aquí', q.x, q.y);   // girando con la brújula, arriba siempre es el frente
   }
+  // Nombres solo de lo que tienes al frente (sector de ±30°). Sirio se nombra siempre.
+  const miraAz = brujulaVigente() ? headingVista() : null;
+  const alFrente = az => miraAz != null && Math.abs(((az - miraAz + 540) % 360) - 180) <= 30;
+  const frente = [];
 
   const alfaDia = sA > 0 ? 0.35 : sA > -6 ? 0.6 : 1;
   const porNombre = {}; S.st.forEach(s => porNombre[s.n] = s);
@@ -837,11 +841,14 @@ function dibujarMapa(S){
     const p = P(s.alt, s.az), r = Math.max(1.1, Math.min(4.6, 3.6 - 0.9*s.mag));
     c.globalAlpha = alfaDia; c.beginPath(); c.arc(p.x, p.y, r, 0, 2*Math.PI); c.fillStyle = '#fff4d6'; c.fill(); c.globalAlpha = 1;
     hits.push({x:p.x, y:p.y, o:s});
-    if (s.mag < 1.0) etiquetas.push({txt:s.n, x:p.x, y:p.y, off:r+3, font:'500 12px system-ui,sans-serif', color:`rgba(253,230,138,${0.9*alfaDia})`, prio:3});
+    const ahi = alFrente(s.az) && s.mag < 1.5;
+    if (ahi && s.alt > 3) frente.push({n:s.n, mag:s.mag, alt:s.alt});
+    if (s.n === 'Sirio') etiquetas.push({txt:'Sirio', x:p.x, y:p.y, off:r+4, font:'800 14px system-ui,sans-serif', color:`rgba(94,234,212,${Math.max(0.7, alfaDia)})`, prio:1});
+    else if (ahi) etiquetas.push({txt:s.n, x:p.x, y:p.y, off:r+3, font:'600 12px system-ui,sans-serif', color:`rgba(253,230,138,${0.9*alfaDia})`, prio:3});
   });
   NOMBRES_CONST.forEach(k => {
     const ss = k.estrellas.map(n => porNombre[n]);
-    if (ss.every(s => s.alt > 5)){
+    if (ss.every(s => s.alt > 5) && ss.some(s => alFrente(s.az))){
       const ps = ss.map(s => P(s.alt, s.az));
       const x = ps.reduce((a, p) => a + p.x, 0)/ps.length, y = ps.reduce((a, p) => a + p.y, 0)/ps.length;
       etiquetas.push({txt:k.txt, x, y, off:14, font:'italic 600 11px system-ui,sans-serif', color:`rgba(160,190,255,${0.85*alfaDia})`, prio:4});
@@ -864,7 +871,10 @@ function dibujarMapa(S){
     c.shadowColor = col; c.shadowBlur = 10;
     c.beginPath(); c.arc(p.x, p.y, r, 0, 2*Math.PI); c.fillStyle = col; c.fill(); c.shadowBlur = 0;
     hits.push({x:p.x, y:p.y, o:pl});
-    etiquetas.push({txt:NOMBRE_ES[pl.nombre], x:p.x, y:p.y, off:r+4, font:'800 13px system-ui,sans-serif', color:col, prio:1});
+    if (pl.mag < 3){   // Urano y Neptuno no se ven a simple vista: su nombre aparece solo al tocarlos
+      if (alFrente(pl.az) && pl.alt > 3) frente.push({n:NOMBRE_ES[pl.nombre], mag:pl.mag, alt:pl.alt});
+      etiquetas.push({txt:NOMBRE_ES[pl.nombre], x:p.x, y:p.y, off:r+4, font:'800 13px system-ui,sans-serif', color:col, prio:1});
+    }
   });
 
   // Luna
@@ -873,12 +883,15 @@ function dibujarMapa(S){
     c.shadowColor = '#e5e7eb'; c.shadowBlur = 14;
     c.beginPath(); c.arc(p.x, p.y, 9, 0, 2*Math.PI); c.fillStyle = `rgba(229,231,235,${0.45 + 0.55*il})`; c.fill(); c.shadowBlur = 0;
     hits.push({x:p.x, y:p.y, o:S.luna});
+    if (alFrente(S.luna.az)) frente.push({n:'Luna', mag:-10, alt:S.luna.alt});
     etiquetas.push({txt:`Luna ${Math.round(il*100)}%`, x:p.x, y:p.y, off:12, font:'800 13px system-ui,sans-serif', color:'#f1f5f9', prio:0});
   }
 
   // Etiquetas sin superposición
   etiquetas.sort((a, b) => a.prio - b.prio);
   const ocupados = [];
+  if (miraAz != null && !sigue){ const q = P(90*0.38, miraAz); ocupados.push({x:q.x - 46, y:q.y - 9, w:92, h:18}); }
+  MAPA.frente = miraAz == null ? null : frente.sort((a, b) => a.mag - b.mag);
   c.textAlign = 'left'; c.textBaseline = 'top';
   c.shadowColor = 'rgba(0,0,0,.85)';
   etiquetas.forEach(L => {
@@ -1013,6 +1026,7 @@ $('mapa').addEventListener('click', e => {
   let mejor = null, dMin = 24;
   hits.forEach(h => { const d = Math.hypot(h.x - x, h.y - y); if (d < dMin){ dMin = d; mejor = h; } });
   $('toque').innerHTML = mejor ? descripcion(mejor.o, escenaActual.sol.alt) : 'No hay nada destacado ahí. Prueba tocando un punto o un nombre.';
+  MAPA.tToque = Date.now(); MAPA.frenteClave = null;
 });
 
 let tResize;
@@ -1107,7 +1121,12 @@ for (let a = 0; a <= 360; a += 2){ HORIZ.push(vec(0, a)); ALT30.push(vec(30, a))
 const MERID = [0, 90, 180, 270].map(az => { const p = []; for (let h = 0; h <= 88; h += 4) p.push(vec(h, az)); return p; });
 const RUMBOS_C = [['N',0],['NE',45],['E',90],['SE',135],['S',180],['SO',225],['O',270],['NO',315]];
 
-function mostrarMsg(html){ const m = $('arMsg'); m.innerHTML = html; m.style.display = html ? 'block' : 'none'; }
+function mostrarMsg(html, tipo){
+  const m = $('arMsg'); m.innerHTML = html; m.style.display = html ? 'block' : 'none';
+  AR.msgTipo = html ? (tipo || '') : '';
+  clearTimeout(AR.msgT);
+  if (html && tipo === 'bruj') AR.msgT = setTimeout(() => { if (AR.msgTipo === 'bruj') mostrarMsg(''); }, 12000);
+}
 function textoAjuste(){
   $('arAjTxt').textContent = BR.ajuste ? `Corrección de brújula: ${BR.ajuste > 0 ? '+' : ''}${BR.ajuste}°` : 'Si el Sol o la Luna no calzan, corrige con ◀ ▶';
 }
@@ -1128,13 +1147,13 @@ function abrirAR(res){
   mostrarMsg('');
   textoAjuste();
   if (res === 'denegado' || res === 'error'){
-    mostrarMsg('<b>Sin permiso para la brújula.</b> Cierra esta vista, vuelve a tocar “Apuntar al cielo” y acepta el permiso de movimiento. Mientras tanto, puedes recorrer el cielo arrastrando con el dedo.');
+    mostrarMsg('<b>Sin permiso para la brújula.</b> Cierra esta vista, vuelve a tocar “Apuntar al cielo” y acepta el permiso de movimiento. Mientras tanto, puedes recorrer el cielo arrastrando con el dedo.', 'bruj');
   }
   setTimeout(() => {
     if (AR.abierto && BR.esperaCal && !brujulaVigente()){
-      mostrarMsg('<b>Calibrando la brújula:</b> baja el teléfono hasta que quede casi horizontal (como para leer) durante un segundo, y luego vuelve a apuntar al cielo.');
+      mostrarMsg('<b>Calibrando la brújula:</b> baja el teléfono hasta que quede casi horizontal (como para leer) durante un segundo, y luego vuelve a apuntar al cielo.', 'bruj');
     } else if (AR.abierto && !brujulaVigente() && $('arMsg').style.display === 'none'){
-      mostrarMsg('<b>El teléfono no está entregando la brújula.</b> En iPhone, iOS solo la entrega si la página se abre desde un enlace <b>https</b> en Safari (por ejemplo GitHub Pages); abierta como archivo desde WhatsApp o Archivos queda bloqueada. Mientras tanto, arrastra con el dedo para recorrer el cielo.');
+      mostrarMsg('<b>El teléfono no está entregando la brújula.</b> En iPhone, iOS solo la entrega si la página se abre desde un enlace <b>https</b> en Safari (por ejemplo GitHub Pages); abierta como archivo desde WhatsApp o Archivos queda bloqueada. Mientras tanto, arrastra con el dedo para recorrer el cielo.', 'bruj');
     }
   }, 2500);
   if (navigator.geolocation && AR.gps == null){
@@ -1180,6 +1199,7 @@ function dibujarAR(){
   // Dirección de la "cámara": sensores o arrastre manual
   let f, u, r;
   const sensor = brujulaVigente();
+  if (sensor && AR.msgTipo === 'bruj') mostrarMsg('');   // la brújula ya responde: fuera el aviso
   if (sensor){ f = BR.f; u = BR.u; r = BR.r; }
   else {
     f = vec(AR.manual.alt, AR.manual.az);
@@ -1280,12 +1300,14 @@ function dibujarAR(){
     c.beginPath(); c.arc(p.x, p.y, b.rad, 0, 2*Math.PI); c.fillStyle = b.col; c.fill();
     c.shadowBlur = 0; c.globalAlpha = 1;
     objetos.push({p, o:b.o});
-    etiqueta(b.txt + (bajo ? ' (bajo el horizonte)' : ''), p.x, p.y, b.rad + 5, '800 15px system-ui,sans-serif', b.col);
+    const esObj = (b.o.nombre && b.o.nombre === AR.obj) || (b.o.tipo === 'luna' && AR.obj === 'Luna');
+    etiqueta(b.txt + (bajo ? ' (bajo el horizonte)' : ''), p.x, p.y, esObj ? 34 : b.rad + 5, '800 15px system-ui,sans-serif', b.col);
   });
   S.st.forEach(s => {
     if (s.mag >= 1.5 || s.alt < 0) return;
     const p = proj(vec(s.alt, s.az)); if (!enPantalla(p)) return;
-    etiqueta(s.n, p.x, p.y, 7, '600 13px system-ui,sans-serif', `rgba(253,230,138,${0.95*alfa})`);
+    if (s.n === AR.obj) etiqueta(s.n, p.x, p.y, 34, '800 16px system-ui,sans-serif', '#5eead4');
+    else etiqueta(s.n, p.x, p.y, 7, '600 13px system-ui,sans-serif', `rgba(253,230,138,${0.95*alfa})`);
   });
 
   // Flecha en el borde de la zona libre
@@ -1554,16 +1576,31 @@ setInterval(() => {
 // Mapa principal que gira en vivo con la brújula
 const AYUDA_FIJA = $('ayudaMapa').innerHTML;
 const AYUDA_SIGUE = 'Sostén el teléfono frente a ti, casi horizontal, como para leer: <b>lo que está arriba en el mapa es lo que tienes al frente</b>, y lo que está a la derecha del mapa está a tu derecha. Al girar tú, el mapa gira contigo. El centro es el punto sobre tu cabeza.';
+// Mientras el mapa gira, el recuadro dice qué brillante tienes al frente (Sirio destacado)
+function textoFrente(){
+  const fr = MAPA.frente;
+  if (!fr || Date.now() - (MAPA.tToque || 0) < 6000) return;
+  const clave = fr.map(o => o.n).join('|');
+  if (clave === MAPA.frenteClave) return;
+  MAPA.frenteClave = clave;
+  const sirio = fr.find(o => o.n === 'Sirio');
+  const otros = fr.filter(o => o.n !== 'Sirio').slice(0, 3).map(o => `<b>${o.n}</b>`);
+  let h = '';
+  if (sirio) h = `✦ <b style="color:#5eead4">Sirio</b> está al frente, ${altura(sirio.alt)} (${Math.round(sirio.alt)}°).` + (otros.length ? ` También: ${otros.join(', ')}.` : '');
+  else if (otros.length) h = `Al frente: ${otros.join(', ')}.`;
+  else h = 'Al frente no hay nada brillante. Gira para buscar.';
+  $('toque').innerHTML = h;
+}
 function loopMapa(t){
   if (!MAPA.sigue) return;
-  if (!AR.abierto && escenaActual && t - MAPA.ultimo > 60){ MAPA.ultimo = t; dibujarMapa(escenaActual); }
+  if (!AR.abierto && escenaActual && t - MAPA.ultimo > 60){ MAPA.ultimo = t; dibujarMapa(escenaActual); textoFrente(); }
   requestAnimationFrame(loopMapa);
 }
 $('btnSigue').addEventListener('click', async () => {
   const b = $('btnSigue');
   if (MAPA.sigue){
     MAPA.sigue = false; b.className = 'btn'; b.textContent = '🧭 Girar el mapa con la brújula';
-    $('ayudaMapa').innerHTML = AYUDA_FIJA; renderMapa(); return;
+    $('ayudaMapa').innerHTML = AYUDA_FIJA; MAPA.frenteClave = null; renderMapa(); return;
   }
   const res = await activarSensores();
   if (res !== 'ok'){ $('toque').innerHTML = '<b>Sin permiso de movimiento.</b> Vuelve a tocar el botón y elige <b>Permitir</b>.'; return; }
